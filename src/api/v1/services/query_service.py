@@ -1,24 +1,31 @@
 
-from src.api.v1.tools.vector_search_tool import _vector_search_with_scores
-from typing import List, Dict, Any
+# from src.api.v1.tools.vector_search_tool import _vector_search_with_scores
+# from typing import List, Dict, Any
+
+from src.api.v1.agents.agent import run_vector_search_agent
+
+def generate_answer(query: str):
+   return run_vector_search_agent(query=query)
 
 
-def generate_answer(query: str) -> Dict[str, Any]:
-    """
-    Generate answer by retrieving relevant chunks using vector search.
-    Returns structured response with query and retrieved results.
-    """
+# def generate_answer(query: str) -> Dict[str, Any]:
+#     """
+#     Generate answer by retrieving relevant chunks using vector search.
+#     Returns structured response with query and retrieved results.
+#     """
     
-    # Get retrieved results with structured format
-    retrieved_results: List[Dict[str, Any]] = _vector_search_with_scores(
-        query=query,
-        k=5
-    )
+#     # Get retrieved results with structured format
+#     retrieved_results: List[Dict[str, Any]] = _vector_search_with_scores(
+#         query=query,
+#         k=5
+#     )
     
-    # Return response in desired format
-    return {
-        "query": query,
-        "retrieved_results": retrieved_results
-    }
+#     # Return response in desired format
+#     return {
+#         "query": query,
+#         "retrieved_results": retrieved_results
+#     }
+
+
 
 

@@ -15,6 +15,7 @@ class ChunkMetadata(BaseModel):
     source: Optional[str] = Field(None, description="Source file")
 
 
+
 class RetrievedChunk(BaseModel):
     rank: int = Field(..., description="Rank of the result")
     chunk_id: int | str = Field(..., description="Unique chunk identifier")
@@ -30,3 +31,10 @@ class QueryResponse(BaseModel):
         description="Retrieved and ranked results"
     )
     
+class AIResponse(BaseModel):
+   query: str = Field(description="The Given query by user must be present here")
+   answer: str = Field(description="The generated response")
+   policy_citations: str = Field(description="Give the Policy Citation")
+   page_no: str = Field(description="The page number in the metadata")
+   document_name: str = Field(description="Name of the document used")
+
