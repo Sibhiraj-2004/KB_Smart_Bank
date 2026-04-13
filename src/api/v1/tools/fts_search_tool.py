@@ -1,59 +1,96 @@
-from langchain_core.tools import tool
-import psycopg
-from psycopg.rows import dict_row
-
 import os
 
+import psycopg
+from dotenv import load_dotenv
+from langchain_core.documents import Document
+from langchain_core.tools import tool
+from psycopg.rows import dict_row
+from typing import List
 
-_raw_conn = os.getenv("RAW_PG_CONNECTION")
+load_dotenv()
+
+
+def _get_raw_conn() -> str:
+    raw = os.getenv("RAW_PG_CONNECTION") or os.getenv(
+        "PG_CONNECTION_STRING", ""
+    ).replace("postgresql+psycopg://", "postgresql://")
+    if not raw:
+        raise RuntimeError("RAW_PG_CONNECTION or PG_CONNECTION_STRING not set")
+    return raw
+
 
 @tool
-def fts_search_tool(query: str) -> str:
-    """Use for keyword-based search (short queries, exact terms)."""
+def fts_search_tool(query: str) -> List[Document]:
+    """
+    Full-text search using PostgreSQL tsvector against multimodal_chunks.
+    Best for: exact terms, acronyms, specific phrases, regulatory codes.
 
-    results = fts_search(query)
+    Args:
+        query: The search query string
+
+    Returns:
+        List of Document objects with relevant content
+    """
+    results = fts_search(query, k=10)
 
     if not results:
-        return "No keyword matches found."
+        print("[fts_search_tool] No keyword matches found.")
+        return []
 
-    return "\n\n".join([f"{doc['content']}\nMetadata: {doc['metadata']}" for doc in results])
+    docs = [
+        Document(page_content=r["content"], metadata=r.get("metadata", {}))
+        for r in results
+    ]
+    print(f"[fts_search_tool] Retrieved {len(docs)} chunks via FTS from multimodal_chunks")
+    return docs
 
 
+def fts_search(query: str, k: int = 10, **_kwargs) -> List[dict]:
+    """
+    Raw FTS against multimodal_chunks.content using plainto_tsquery.
+    **_kwargs absorbs legacy collection_name arg so callers don't break.
+    Returns list of dicts: {content, metadata, fts_rank}
+    """
+    sql = """
+        SELECT
+            content,
+            source_file,
+            page_number,
+            section,
+            element_type,
+            chunk_type,
+            metadata,
+            ts_rank(
+                to_tsvector('english', content),
+                plainto_tsquery('english', %(query)s)
+            ) AS fts_rank
+        FROM multimodal_chunks
+        WHERE chunk_type = 'text'
+          AND content IS NOT NULL
+          AND to_tsvector('english', content)
+              @@ plainto_tsquery('english', %(query)s)
+        ORDER BY fts_rank DESC
+        LIMIT %(k)s;
+    """
 
-
-def fts_search(query: str, k: int = 5, collection_name: str = "regulatory-compilance"):
-
-    sql =  """
-       SELECT
-           e.document AS content,
-           e.cmetadata AS metadata,
-           ts_rank(
-               to_tsvector('english', e.document),
-               plainto_tsquery('english', %(query)s)
-           ) AS fts_rank
-       FROM  langchain_pg_embedding  e
-       JOIN  langchain_pg_collection c ON c.uuid = e.collection_id
-       WHERE c.name = %(collection)s
-         AND to_tsvector('english', e.document)
-             @@ plainto_tsquery('english', %(query)s)
-       ORDER BY fts_rank DESC
-       LIMIT %(k)s;
-   """
-
-    with psycopg.connect(_raw_conn, row_factory=dict_row) as conn:
+    with psycopg.connect(_get_raw_conn(), row_factory=dict_row) as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, {
-                "query": query,
-                "collection": collection_name,
-                "k": k
-            })
+            cur.execute(sql, {"query": query, "k": k})
             rows = cur.fetchall()
 
     return [
         {
             "content": row["content"],
-            "metadata": row["metadata"],
             "fts_rank": float(row["fts_rank"]),
+            "metadata": {
+                "source_file": row["source_file"],
+                "page_number": row["page_number"],
+                "section": row["section"],
+                "element_type": row["element_type"],
+                "chunk_type": row["chunk_type"],
+                **(row["metadata"] or {}),
+            },
         }
         for row in rows
     ]
+

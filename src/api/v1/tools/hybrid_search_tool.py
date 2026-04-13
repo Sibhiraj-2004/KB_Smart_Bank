@@ -1,50 +1,60 @@
+import os
+from typing import List
+
+from dotenv import load_dotenv
+from langchain_core.documents import Document
 from langchain_core.tools import tool
-from src.core.db import get_vector_store
+
 from src.api.v1.tools.fts_search_tool import fts_search
+from src.api.v1.tools.vector_search_tool import vector_search
+
+load_dotenv()
 
 
 @tool
-def hybrid_search_tool(query: str) -> str:
-    """Use for complex queries requiring both semantic and keyword understanding."""
+def hybrid_search_tool(query: str) -> List[Document]:
+    """
+    Hybrid search combining BM25 keyword matching with vector semantic search via RRF.
+    Both search directly against multimodal_chunks table.
+    Best for: complex queries needing both exact terms and semantic understanding.
 
-    results = _hybrid_search(query)
+    Args:
+        query: The search query string
 
-    if not results:
-        return "No hybrid results found."
-
-    return "\n\n".join([f"{doc['content']}\nMetadata: {doc['metadata']}" for doc in results])
-
-
-def _hybrid_search(query: str, k: int = 5) -> list[dict]:
-   """
-   Merge vector and FTS results using Reciprocal Rank Fusion (RRF).
-
-
-   RRF score for a chunk = sum of 1/(rank + 60) across both result lists.
-   Chunks appearing in both lists score higher than those in only one.
-   The constant 60 prevents top-ranked outliers from dominating.
-   """
-   vector_store = get_vector_store()
-   vector_docs = vector_store.similarity_search(query, k=k)
-   fts_docs    = fts_search(query, k=k)
-
-   rrf_scores: dict[str, float] = {}
-   chunk_map:  dict[str, dict]  = {}
-
-   for rank, doc in enumerate(vector_docs):
-       key = doc.page_content[:120]
-       rrf_scores[key] = rrf_scores.get(key, 0) + 1 / (60 + rank + 1)
-       chunk_map[key]  = {"content": doc.page_content, "metadata": doc.metadata}
+    Returns:
+        List of Document objects with relevant content
+    """
+    results = _hybrid_search(query, k=10)
+    docs = [
+        Document(page_content=r["content"], metadata=r.get("metadata", {}))
+        for r in results
+    ]
+    print(f"[hybrid_search_tool] Retrieved {len(docs)} chunks via RRF hybrid search")
+    return docs
 
 
-   for rank, item in enumerate(fts_docs):
-       key = item["content"][:120]
-       rrf_scores[key] = rrf_scores.get(key, 0) + 1 / (60 + rank + 1)
-       chunk_map[key]  = {"content": item["content"], "metadata": item["metadata"]}
+def _hybrid_search(query: str, k: int = 10) -> list[dict]:
+    """
+    Merge vector and FTS results from multimodal_chunks using Reciprocal Rank Fusion.
 
+    RRF score = sum of 1/(rank + 60) across both lists.
+    Chunks appearing in both lists score higher than those in only one.
+    """
+    vector_results = vector_search(query, k=k)   # list of {content, score, metadata}
+    fts_results    = fts_search(query, k=k)       # list of {content, fts_rank, metadata}
 
-   ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
-   return [chunk_map[key] for key, _ in ranked[:k]]
+    rrf_scores: dict[str, float] = {}
+    chunk_map:  dict[str, dict]  = {}
 
+    for rank, item in enumerate(vector_results):
+        key = item["content"][:120]
+        rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (60 + rank + 1)
+        chunk_map[key]  = {"content": item["content"], "metadata": item["metadata"]}
 
+    for rank, item in enumerate(fts_results):
+        key = item["content"][:120]
+        rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (60 + rank + 1)
+        chunk_map[key]  = {"content": item["content"], "metadata": item["metadata"]}
 
+    ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+    return [chunk_map[key] for key, _ in ranked[:k]]

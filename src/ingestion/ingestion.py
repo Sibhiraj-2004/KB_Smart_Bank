@@ -1,59 +1,75 @@
-from dotenv import load_dotenv
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from src.core.db import get_vector_store
-
 import os
+import pathlib
+
+from dotenv import load_dotenv
+
+from src.core.db import store_chunks, upsert_document
+from src.ingestion.docling_parser import parse_document
+
 load_dotenv()
 
-
-def ingest_file(file_path: str, filename: str, regulation_type: str | None = None):
-    """Ingest PDF/TXT and store in pgvector."""
-
-  
-    if filename.endswith(".pdf"):
-        loader = PyPDFLoader(file_path)
-    else:
-        loader = TextLoader(file_path)
-
-    docs = loader.load()
-
-    print("pages:", len(docs))
-
-   
-    for doc in docs:
-        page = doc.metadata.get("page")
-        doc.metadata.update({
-            "source": filename,
-            "document_extension": filename.split(".")[-1],
-            "page": (page if page is not None else 0) + 1,
-            "created_at": os.path.getctime(file_path),
-            "last_updated": os.path.getmtime(file_path),
-             
-        })
+_TEXT_CHUNK_SIZE = 1500
+_TEXT_CHUNK_OVERLAP = 300
 
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512,
-        chunk_overlap=100,
-        separators=["\n\n", "\n", ". ", " ", ""]
-    )
+def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
+    chunks: list[str] = []
+    start = 0
+    step = chunk_size - overlap
+    while start < len(text):
+        chunks.append(text[start: start + chunk_size])
+        start += step
+    return chunks
 
-    chunks = splitter.split_documents(docs)
 
-    print("chunks:", len(chunks))
+def run_ingestion(file_path: str) -> dict:
+    resolved = pathlib.Path(file_path).resolve()
 
+    doc_id = upsert_document(resolved.name, str(resolved))
+    print(f"[ingestion] doc_id={doc_id}  file={file_path}")
 
-    vector_store = get_vector_store(collection_name="hr_support_desk")
-    vector_store.add_documents(chunks)
+    print(f"[ingestion] Parsing: {file_path}")
+    parsed_elements = parse_document(file_path)
+    print(f"[ingestion] Docling produced {len(parsed_elements)} elements")
+
+    chunks: list[dict] = []
+    for elem in parsed_elements:
+        if elem["content_type"] == "text" and len(elem["content"]) > _TEXT_CHUNK_SIZE:
+            for sub in _split_text(elem["content"], _TEXT_CHUNK_SIZE, _TEXT_CHUNK_OVERLAP):
+                chunks.append({
+                    "content": sub,
+                    "content_type": elem["content_type"],
+                    "metadata": elem["metadata"],
+                })
+        else:
+            chunks.append(elem)
+
+    print(f"[ingestion] {len(chunks)} chunks ready for embedding")
+
+    count = store_chunks(chunks, doc_id)
+    print(f"[ingestion] Stored {count} chunks → multimodal_chunks")
+
+    return {"status": "success", "doc_id": doc_id, "chunks_ingested": count}
 
 
 if __name__ == "__main__":
-    # ingest_file("data\RIL-Media-Release-RIL-Q2-FY2024-25-mini.pdf", "RIL-Media-Release-RIL-Q2-FY2024-25-mini.pdf")
-    ingest_file("data\HR_Knowledge_Base_2025.pdf", "HR_Knowledge_Base_2025.pdf")
-    ingest_file("data\HR_Knowledge_Base_2026.pdf", "HR_Knowledge_Base_2026.pdf")
-    
-    print("ingestion completed successfully!")
+    import sys
+
+    if len(sys.argv) >= 2:
+        pdf_path = pathlib.Path(sys.argv[1])
+    else:
+        pdf_path = pathlib.Path("data/RIL-Media-Release-RIL-Q2-FY2024-25-mini.pdf")
+
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"PDF not found at: {pdf_path.resolve()}")
+
+    result = run_ingestion(str(pdf_path))
+
+    print(f"\nIngestion complete: {result}")
 
 
-   
+
+
+
+
+
