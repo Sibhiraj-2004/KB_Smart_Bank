@@ -50,9 +50,11 @@ class AIResponse(BaseModel):
 # ── Pipeline debug response with all intermediate state ─────────────────────
 class PipelineDebugResponse(BaseModel):
     response: AIResponse = Field(description="Final AI-generated response")
+    route: str =Field(description="Pipeline route: 'document' (RAG) or 'product' (NL2SQL)")
     retrieved_doc_count: int = Field(description="Number of documents retrieved")
     reranked_doc_count: int = Field(description="Number of documents reranked")
     retry_count: int = Field(description="Number of validation retries")
     validation_reason: str = Field(description="Reason from validation step")
     original_query: str = Field(description="Original user query")
     final_query_used: str = Field(description="Final query after expansion (if any)")
+   
