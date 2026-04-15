@@ -1,25 +1,3 @@
-"""
-query_service.py
-
-This is the single bridge between the FastAPI route and the LangGraph pipeline.
-
-Flow:
-    FastAPI  →  generate_answer()  →  rag_graph.invoke()  →  all 4 LangGraph nodes
-                                        │
-                                        ├─ Node 1: retriever_node   (tool selection + search)
-                                        ├─ Node 2: rerank_node      (Cohere cross-encoder)
-                                        ├─ Node 3: validate_node    (LLM validation + query expansion)
-                                        └─ Node 4: generate_answer_node (structured LLM answer)
-
-The full final_state is returned so Streamlit can read:
-    - final_state["response"]           → AIResponse dict (answer, citations, etc.)
-    - final_state["reranked_docs"]      → LangChain Document objects
-    - final_state["rerank_scores"]      → Cohere relevance scores
-    - final_state["retrieved_docs"]     → raw retrieval before reranking
-    - final_state["retry_count"]        → how many validation retries happened
-    - final_state["validation_reason"]  → why LLM passed/failed validation
-    - final_state["query"]              → final (possibly expanded) query used
-"""
 
 from src.api.v1.agents.agent import rag_graph, RAGState
 
@@ -40,6 +18,9 @@ def run_rag_pipeline(query: str) -> RAGState:
         "validation_passed": False,
         "retry_count": 0,
         "validation_reason": "",
+        "route": "document",  
+        "generated_sql": "",
+        "sql_result": "",
     }
 
     print(f"\n[pipeline] ── Starting LangGraph pipeline ──────────────────────")
@@ -61,12 +42,13 @@ def generate_answer(query: str) -> dict:
     """
     Called by the FastAPI /query route.
     Runs the full LangGraph pipeline and returns the complete pipeline state
-    including response, metrics, query expansion info, and validation details.
+    including response, metrics, query expansion info, validation details, and route.
     """
     final_state = run_rag_pipeline(query)
     
     # Build debug response with pipeline metrics + response
     return {
+         "route": final_state["route"],  # Pipeline route: 'document' or 'product'
         "response": final_state["response"],
         "retrieved_doc_count": len(final_state["retrieved_docs"]),
         "reranked_doc_count": len(final_state["reranked_docs"]),
@@ -74,4 +56,5 @@ def generate_answer(query: str) -> dict:
         "validation_reason": final_state["validation_reason"],
         "original_query": query,  # Original query before any expansion
         "final_query_used": final_state["query"],  # Query after validation expansion
+       
     }
