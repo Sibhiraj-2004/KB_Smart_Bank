@@ -308,6 +308,7 @@ INSERT INTO fixed_deposits (fd_id, account_id, principal, interest_rate, tenure_
 ('FD-444001', '4678901', 150000.00, 7.25, 730, '2025-09-10', '2027-09-10', 172350.00, 'at_maturity', 'active'),
 ('FD-555001', '6890123',  75000.00, 7.00, 365, '2026-03-01', '2027-03-01',  80250.00, 'at_maturity', 'active');
 
+
 -- ─────────────────────────────────────────────────────────────
 -- 6. SEED DATA — CREDIT CARDS (4 rows)
 -- ─────────────────────────────────────────────────────────────
@@ -424,6 +425,7 @@ SELECT 'credit_cards',      COUNT(*) FROM credit_cards
 UNION ALL
 SELECT 'card_transactions', COUNT(*) FROM card_transactions
 ORDER BY table_name;
+
 
 -- ─────────────────────────────────────────────────────────────
 -- 10. USEFUL SAMPLE QUERIES (for reference / trainees)
