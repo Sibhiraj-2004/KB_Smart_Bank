@@ -61,6 +61,8 @@ if is_admin:
                 st.error("API unreachable")
 
 
+
+
     # ── Main Panel ────────────────────────────────────────────────────────────────
     st.title("🔎 Multimodal Reranking Agentic RAG")
     st.caption(
