@@ -2,6 +2,7 @@
 from src.api.v1.agents.agent import rag_graph, RAGState
 
 
+
 def run_rag_pipeline(query: str) -> RAGState:
     """
     Invoke the full LangGraph RAG pipeline and return the complete final state.
@@ -36,6 +37,7 @@ def run_rag_pipeline(query: str) -> RAGState:
     print(f"[pipeline] Final query used:  {final_state['query']}")
 
     return final_state
+
 
 
 def generate_answer(query: str) -> dict:
